@@ -1,36 +1,80 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# DealFlow Terminal
 
-## Getting Started
+A terminal-style M&A tracking dashboard built with Streamlit. Track acquisitions, extract deal information from news articles, and manage your deal database with a sleek 90s hacker aesthetic.
 
-First, run the development server:
+## Features
 
+- **URL Ingestion**: Paste news article URLs to automatically extract deal information using AI
+- **Web Search Enhancement**: Automatically searches the web for company revenue, funding rounds, and valuation data
+- **Manual Entry**: Add deals manually with a comprehensive form
+- **Inline Editing**: Edit entries directly in the table with automatic multiple calculation
+- **Search & Filter**: Quickly find deals by company, acquirer, or category
+- **Pagination**: Handle hundreds of entries efficiently
+- **Bulk Operations**: Delete multiple entries at once
+
+## Installation
+
+1. Clone the repository:
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+git clone <your-repo-url>
+cd sell-machine
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+2. Create a virtual environment:
+```bash
+python -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+```
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+3. Install dependencies:
+```bash
+pip install -r requirements.txt
+playwright install chromium
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+4. Set up your OpenAI API key:
+   - Create `.streamlit/secrets.toml`:
+   ```toml
+   OPENAI_API_KEY = "your-api-key-here"
+   ```
 
-## Learn More
+5. Run the app:
+```bash
+streamlit run dealflow_terminal.py
+```
 
-To learn more about Next.js, take a look at the following resources:
+## Usage
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+1. **Ingest from URL**: Paste a news article URL about an M&A deal and click `[ INGEST ]`
+2. **Manual Entry**: Fill out the manual entry form to add deals directly
+3. **Edit Entries**: Click on any cell in the table to edit inline
+4. **Search**: Use the search bar to filter entries
+5. **Delete**: Select row numbers and click `[ DELETE SELECTED ]`
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Data Fields
 
-## Deploy on Vercel
+- Company (Target)
+- Acquirer
+- Category
+- Amount (Deal value)
+- Revenue
+- Multiple (EV/Revenue - auto-calculated)
+- Rationale
+- Company URL
+- Company Description
+- Last Round Raised
+- Valuation of Last Round
+- Total Raised
+- Date Added
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Tech Stack
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- Streamlit
+- OpenAI GPT-4o
+- Playwright (web scraping)
+- DuckDuckGo Search (web search)
+- Pandas (data management)
+
+## License
+
+Private repository
