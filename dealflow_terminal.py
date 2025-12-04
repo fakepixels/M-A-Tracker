@@ -31,11 +31,12 @@ st.markdown("""
         padding-bottom: 2rem;
     }
     
-    * {
-        font-family: 'Geist Mono', 'SF Mono', 'Consolas', monospace !important;
-    }
-    
-    h1, h2, h3, h4, h5, h6, p, div, span, label, input, textarea, button {
+    /* Apply font to main content but exclude dataframe internals */
+    .stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp h5, .stApp h6,
+    .stApp p, .stApp label, 
+    .stApp .stMarkdown, .stApp .stText,
+    .stTextInput input, .stTextArea textarea,
+    .stButton button, .stSelectbox, .stNumberInput {
         font-family: 'Geist Mono', 'SF Mono', 'Consolas', monospace !important;
         color: #FFFFFF !important;
         font-size: 12px !important;
@@ -174,6 +175,31 @@ st.markdown("""
 
 # CSV file path
 CSV_FILE = "mergers.csv"
+
+def parse_monetary_value(value):
+    """Parse monetary string like '600M', '2.5B', '$14M' into numeric value in millions."""
+    if pd.isna(value) or value == "N/A" or value == "" or value == "None":
+        return 0
+    
+    value_str = str(value).upper().strip()
+    # Remove currency symbols and spaces
+    value_str = value_str.replace("$", "").replace(",", "").strip()
+    
+    try:
+        if "B" in value_str:
+            num = float(value_str.replace("B", "").strip())
+            return num * 1000  # Convert to millions
+        elif "M" in value_str:
+            num = float(value_str.replace("M", "").strip())
+            return num
+        elif "K" in value_str:
+            num = float(value_str.replace("K", "").strip())
+            return num / 1000  # Convert to millions
+        else:
+            # Try to parse as plain number (assume millions)
+            return float(value_str)
+    except:
+        return 0
 
 def load_data():
     """Load data from CSV file, create if it doesn't exist."""
@@ -639,6 +665,10 @@ if not df.empty:
         display_df = paginated_df.copy()
         display_df.insert(0, '#', range(start_idx + 1 if total_pages > 1 else 1, len(display_df) + (start_idx + 1 if total_pages > 1 else 1)))
         
+        # Convert Amount and Revenue to numeric for proper sorting (in place)
+        display_df['Amount'] = display_df['Amount'].apply(parse_monetary_value)
+        display_df['Revenue'] = display_df['Revenue'].apply(parse_monetary_value)
+        
         # Configure editable columns (exclude # and Date Added)
         editable_columns = {
             "Company (Target)": True,
@@ -659,7 +689,19 @@ if not df.empty:
         st.dataframe(
             display_df,
             use_container_width=True,
-            hide_index=True
+            hide_index=True,
+            column_config={
+                "Amount": st.column_config.NumberColumn(
+                    "Amount",
+                    help="Deal value in millions",
+                    format="%.0fM"
+                ),
+                "Revenue": st.column_config.NumberColumn(
+                    "Revenue",
+                    help="Revenue in millions",
+                    format="%.1fM"
+                ),
+            }
         )
         
         # Edit button to enable editing mode
@@ -745,40 +787,29 @@ if not df.empty:
                         delete_btn = st.form_submit_button("[ DELETE ENTRY ]")
                     
                     if delete_btn:
-                        # Map back to original index
-                        if search_query or total_pages > 1:
-                            orig_idx = filtered_df.index[start_idx + i]
-                        else:
-                            orig_idx = idx
-                        
-                        # Delete the row
-                        df = df.drop(df.index[orig_idx]).reset_index(drop=True)
+                        # Delete the row using iloc position
+                        df = df.drop(idx).reset_index(drop=True)
                         save_data(df)
                         st.session_state.df_cache = df
                         st.session_state.df_cache_timestamp = os.path.getmtime(CSV_FILE) if os.path.exists(CSV_FILE) else 0
+                        st.session_state.edit_mode = False
                         st.success(f"Entry #{row_num} deleted!")
                         st.rerun()
                     
                     if save_btn:
-                        # Map back to original index
-                        if search_query or total_pages > 1:
-                            orig_idx = filtered_df.index[start_idx + i]
-                        else:
-                            orig_idx = idx
-                        
-                        # Update row
-                        df.at[orig_idx, "Company (Target)"] = edit_target.strip() if edit_target else "N/A"
-                        df.at[orig_idx, "Acquirer"] = edit_acquirer.strip() if edit_acquirer else "N/A"
-                        df.at[orig_idx, "Category"] = edit_category.strip() if edit_category else "N/A"
-                        df.at[orig_idx, "Amount"] = edit_amount.strip() if edit_amount else "N/A"
-                        df.at[orig_idx, "Revenue"] = edit_revenue.strip() if edit_revenue else "N/A"
-                        df.at[orig_idx, "Multiple"] = calculated_multiple
-                        df.at[orig_idx, "Rationale"] = edit_rationale.strip() if edit_rationale else "N/A"
-                        df.at[orig_idx, "Company URL"] = edit_url.strip() if edit_url else "N/A"
-                        df.at[orig_idx, "Company Description"] = edit_desc.strip() if edit_desc else "N/A"
-                        df.at[orig_idx, "Last Round Raised"] = edit_last_round.strip() if edit_last_round else "N/A"
-                        df.at[orig_idx, "Valuation of Last Round"] = edit_valuation.strip() if edit_valuation else "N/A"
-                        df.at[orig_idx, "Total Raised"] = edit_total.strip() if edit_total else "N/A"
+                        # Update row using the index from iterrows
+                        df.at[idx, "Company (Target)"] = edit_target.strip() if edit_target else "N/A"
+                        df.at[idx, "Acquirer"] = edit_acquirer.strip() if edit_acquirer else "N/A"
+                        df.at[idx, "Category"] = edit_category.strip() if edit_category else "N/A"
+                        df.at[idx, "Amount"] = edit_amount.strip() if edit_amount else "N/A"
+                        df.at[idx, "Revenue"] = edit_revenue.strip() if edit_revenue else "N/A"
+                        df.at[idx, "Multiple"] = calculated_multiple
+                        df.at[idx, "Rationale"] = edit_rationale.strip() if edit_rationale else "N/A"
+                        df.at[idx, "Company URL"] = edit_url.strip() if edit_url else "N/A"
+                        df.at[idx, "Company Description"] = edit_desc.strip() if edit_desc else "N/A"
+                        df.at[idx, "Last Round Raised"] = edit_last_round.strip() if edit_last_round else "N/A"
+                        df.at[idx, "Valuation of Last Round"] = edit_valuation.strip() if edit_valuation else "N/A"
+                        df.at[idx, "Total Raised"] = edit_total.strip() if edit_total else "N/A"
                         
                         save_data(df)
                         st.session_state.df_cache = df
