@@ -7,10 +7,17 @@ import json
 from datetime import datetime
 from duckduckgo_search import DDGS
 
+# Try to import Exa for better search
+try:
+    from exa_py import Exa
+    EXA_AVAILABLE = True
+except ImportError:
+    EXA_AVAILABLE = False
+
 
 # Configure page
 st.set_page_config(
-    page_title="DealFlow Terminal",
+    page_title="M&A Tracker",
     page_icon="💻",
     layout="wide",
     initial_sidebar_state="collapsed"
@@ -38,9 +45,18 @@ st.markdown("""
     }
     
     h1 {
-        color: #00FF00 !important;
+        color: #888888 !important;
         font-weight: bold;
         letter-spacing: 2px;
+        margin-bottom: 0 !important;
+    }
+    
+    .byline {
+        color: #888888;
+        font-family: 'Geist Mono', monospace;
+        font-size: 0.8rem;
+        margin-top: 0;
+        letter-spacing: 1px;
     }
     
     .blink {
@@ -232,18 +248,85 @@ def scrape_article(url):
     except Exception as e:
         raise Exception(f"Error scraping URL: {str(e)}")
 
+def search_with_exa(company_name):
+    """Search using Exa API for better company information."""
+    try:
+        exa_api_key = st.secrets.get("EXA_API_KEY") or os.getenv("EXA_API_KEY")
+        if not exa_api_key:
+            st.warning("⚠️ EXA_API_KEY not found in secrets")
+            return None
+        
+        st.info(f"🔍 Using Exa Search for: {company_name}")
+        exa = Exa(api_key=exa_api_key)
+        
+        # Search for company revenue and funding information
+        search_queries = [
+            f"{company_name} company revenue annual 2024 2023",
+            f"{company_name} funding round valuation Crunchbase",
+            f"{company_name} Series funding raised total"
+        ]
+        
+        all_results = []
+        for query in search_queries:
+            try:
+                st.info(f"  → Searching: {query}")
+                # Use correct Exa API parameters
+                results = exa.search_and_contents(
+                    query,
+                    num_results=5,
+                    text=True  # Get full text content
+                )
+                st.info(f"  → Got {len(results.results)} results for this query")
+                for result in results.results:
+                    text_content = getattr(result, 'text', '') or ''
+                    all_results.append({
+                        "title": result.title,
+                        "url": result.url,
+                        "text": text_content[:2000] if text_content else ""
+                    })
+            except Exception as e:
+                st.warning(f"Exa query failed: {e}")
+                continue
+        
+        if all_results:
+            st.success(f"✓ Exa found {len(all_results)} total results")
+        else:
+            st.warning("Exa returned no results")
+        
+        # Combine results
+        combined_text = "\n\n".join([
+            f"Title: {r['title']}\nURL: {r['url']}\nContent: {r['text']}\n---"
+            for r in all_results[:10]
+        ])
+        
+        return combined_text[:10000] if combined_text else None
+    except Exception as e:
+        st.error(f"Exa error: {e}")
+        return None
+
 def search_company_info(company_name):
     """Search the web for company information with targeted queries."""
+    # Try Exa first if available
+    if EXA_AVAILABLE:
+        st.info("Exa library is available, attempting Exa search...")
+        exa_results = search_with_exa(company_name)
+        if exa_results:
+            return exa_results
+        st.warning("Exa search failed, falling back to DuckDuckGo...")
+    else:
+        st.warning("Exa library not available, using DuckDuckGo...")
+    
+    # Fall back to DuckDuckGo
     try:
         with DDGS() as ddgs:
             # More specific search queries for better results
             search_queries = [
-                f"{company_name} revenue 2024 2023 annual",
-                f"{company_name} funding rounds series A B C Crunchbase",
-                f"{company_name} valuation last round",
-                f"{company_name} total funding raised",
-                f"{company_name} company website about",
-                f"{company_name} financials revenue"
+                f"{company_name} revenue 2024 2023 annual ARR",
+                f"{company_name} funding round Series valuation Crunchbase",
+                f"{company_name} raised million funding",
+                f"{company_name} company revenue financials",
+                f'site:crunchbase.com "{company_name}"',
+                f'site:pitchbook.com "{company_name}"'
             ]
             
             search_results = []
@@ -275,6 +358,12 @@ def search_company_info(company_name):
 
 def extract_deal_info(text, company_name=None):
     """Extract deal information using OpenAI with web search enhancement."""
+    
+    # Debug: Show article text length
+    st.info(f"📄 Article text length: {len(text)} characters")
+    if len(text) < 100:
+        st.error(f"Article text is too short! Content: {text[:500]}")
+    
     # First, extract basic deal info from the article
     initial_prompt = """Extract the following information from this M&A news article and return ONLY a valid JSON object with these exact keys:
 - "Company (Target)": The target company being acquired
@@ -317,6 +406,7 @@ Article text:
         content = content.strip()
         
         basic_data = json.loads(content)
+        st.info(f"📊 Initial extraction: {basic_data}")
         extracted_company_name = basic_data.get("Company (Target)", company_name or "")
         
         # Now search the web for additional company information
@@ -448,12 +538,25 @@ Web search results about the company (SEARCH THESE CAREFULLY FOR REVENUE DATA):
 # Main app
 st.markdown("""
 <h1>M&A_TRACKER_V1.0_<span class="blink">█</span></h1>
+<p class="byline">made by tina</p>
 """, unsafe_allow_html=True)
 
 st.markdown("---")
 
-# Load existing data
-df = load_data()
+# Load existing data with caching
+if 'df_cache' not in st.session_state or 'df_cache_timestamp' not in st.session_state:
+    df = load_data()
+    st.session_state.df_cache = df
+    st.session_state.df_cache_timestamp = os.path.getmtime(CSV_FILE) if os.path.exists(CSV_FILE) else 0
+else:
+    # Check if CSV file has been modified
+    current_timestamp = os.path.getmtime(CSV_FILE) if os.path.exists(CSV_FILE) else 0
+    if current_timestamp > st.session_state.df_cache_timestamp:
+        df = load_data()
+        st.session_state.df_cache = df
+        st.session_state.df_cache_timestamp = current_timestamp
+    else:
+        df = st.session_state.df_cache.copy()
 
 # Input section
 st.markdown("### [ INPUT ]")
@@ -467,10 +570,17 @@ if ingest_button and url:
     if not url.startswith(("http://", "https://")):
         st.markdown('<div class="error-message">ERROR: Invalid URL format</div>', unsafe_allow_html=True)
     else:
+        # Set flag to prevent data editor from processing during ingestion
+        st.session_state.processing_ingestion = True
+        
         with st.spinner("Scraping article..."):
             try:
                 article_text = scrape_article(url)
                 st.markdown('<div class="success-message">✓ Article scraped successfully</div>', unsafe_allow_html=True)
+                
+                # Debug: Show first 500 chars of scraped content
+                with st.expander("🔍 Debug: Scraped article content (first 1000 chars)", expanded=False):
+                    st.text(article_text[:1000] if article_text else "NO CONTENT")
                 
                 with st.spinner("Extracting deal information..."):
                     deal_data = extract_deal_info(article_text)
@@ -488,112 +598,23 @@ if ingest_button and url:
                         # Save to CSV
                         save_data(df)
                         
+                        # Update cache
+                        st.session_state.df_cache = df
+                        st.session_state.df_cache_timestamp = os.path.getmtime(CSV_FILE) if os.path.exists(CSV_FILE) else 0
+                        
                         st.markdown('<div class="success-message">✓ Data ingested and saved to mergers.csv</div>', unsafe_allow_html=True)
                         st.json(deal_data)
+                        
+                        # Clear the editor hash to force refresh
+                        if 'last_editor_hash' in st.session_state:
+                            del st.session_state.last_editor_hash
                     else:
                         st.markdown('<div class="error-message">ERROR: Failed to extract deal information</div>', unsafe_allow_html=True)
             except Exception as e:
                 st.markdown(f'<div class="error-message">ERROR: {str(e)}</div>', unsafe_allow_html=True)
-
-st.markdown("---")
-
-# Manual input section
-st.markdown("### [ MANUAL ENTRY ]")
-with st.form("manual_entry_form", clear_on_submit=True):
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        target_company = st.text_input("Company (Target):", key="target_input")
-        acquirer = st.text_input("Acquirer:", key="acquirer_input")
-        category = st.text_input("Category:", key="category_input")
-        amount = st.text_input("Amount (e.g., 500M, 2.5B):", key="amount_input")
-        company_url = st.text_input("Company URL:", key="company_url_input", placeholder="https://...")
-        company_description = st.text_area("Company Description:", key="company_desc_input", height=80, placeholder="Short description")
-    
-    with col2:
-        revenue = st.text_input("Revenue:", key="revenue_input", placeholder="e.g., 14M or 100M")
-        multiple = st.text_input("Multiple (EV/Revenue):", key="multiple_input", placeholder="Auto-calculated", disabled=True)
-        last_round_raised = st.text_input("Last Round Raised:", key="last_round_input", placeholder="e.g., 50M")
-        valuation_last_round = st.text_input("Valuation of Last Round:", key="valuation_input", placeholder="e.g., 500M")
-        total_raised = st.text_input("Total Raised:", key="total_raised_input", placeholder="e.g., 200M")
-    
-    with col3:
-        rationale = st.text_area("Rationale:", key="rationale_input", height=200)
-    
-    submit_manual = st.form_submit_button("[ SUBMIT MANUAL ENTRY ]")
-
-if submit_manual:
-    # Validate required fields
-    if not target_company or not acquirer:
-        st.markdown('<div class="error-message">ERROR: Company (Target) and Acquirer are required fields</div>', unsafe_allow_html=True)
-    else:
-        # Calculate multiple automatically if Amount and Revenue are provided
-        calculated_multiple = "N/A"
-        if amount and revenue and amount.strip() != "N/A" and revenue.strip() != "N/A":
-            try:
-                amount_str = str(amount).upper().strip().replace("$", "").replace(",", "").replace(" ", "")
-                revenue_str = str(revenue).upper().strip().replace("$", "").replace(",", "").replace(" ", "")
-                
-                # Parse amount
-                amount_val = None
-                if "B" in amount_str or "BILLION" in amount_str:
-                    num_part = amount_str.replace("B", "").replace("BILLION", "").strip()
-                    amount_val = float(num_part) * 1000
-                elif "M" in amount_str or "MILLION" in amount_str:
-                    num_part = amount_str.replace("M", "").replace("MILLION", "").strip()
-                    amount_val = float(num_part)
-                elif amount_str.replace(".", "").isdigit():
-                    amount_val = float(amount_str)
-                
-                # Parse revenue
-                revenue_val = None
-                if "B" in revenue_str or "BILLION" in revenue_str:
-                    num_part = revenue_str.replace("B", "").replace("BILLION", "").strip()
-                    revenue_val = float(num_part) * 1000
-                elif "M" in revenue_str or "MILLION" in revenue_str:
-                    num_part = revenue_str.replace("M", "").replace("MILLION", "").strip()
-                    revenue_val = float(num_part)
-                elif revenue_str.replace(".", "").isdigit():
-                    revenue_val = float(revenue_str)
-                
-                # Calculate multiple
-                if amount_val and revenue_val and revenue_val > 0:
-                    multiple_val = amount_val / revenue_val
-                    calculated_multiple = f"{multiple_val:.0f}x" if multiple_val >= 100 else f"{multiple_val:.2f}x"
-            except:
-                calculated_multiple = multiple.strip() if multiple else "N/A"
-        else:
-            calculated_multiple = multiple.strip() if multiple else "N/A"
-        
-        # Create deal data dictionary
-        manual_deal_data = {
-            "Company (Target)": target_company.strip(),
-            "Acquirer": acquirer.strip(),
-            "Category": category.strip() if category else "N/A",
-            "Amount": amount.strip() if amount else "N/A",
-            "Revenue": revenue.strip() if revenue else "N/A",
-            "Multiple": calculated_multiple,
-            "Rationale": rationale.strip() if rationale else "N/A",
-            "Company URL": company_url.strip() if company_url else "N/A",
-            "Company Description": company_description.strip() if company_description else "N/A",
-            "Last Round Raised": last_round_raised.strip() if last_round_raised else "N/A",
-            "Valuation of Last Round": valuation_last_round.strip() if valuation_last_round else "N/A",
-            "Total Raised": total_raised.strip() if total_raised else "N/A",
-            "Date Added": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        }
-        
-        # Convert to DataFrame row
-        new_row = pd.DataFrame([manual_deal_data])
-        
-        # Append to existing data
-        df = pd.concat([df, new_row], ignore_index=True)
-        
-        # Save to CSV
-        save_data(df)
-        
-        st.markdown('<div class="success-message">✓ Manual entry saved to mergers.csv</div>', unsafe_allow_html=True)
-        st.json(manual_deal_data)
-        st.rerun()
+            finally:
+                st.session_state.processing_ingestion = False
+                # Don't rerun immediately - let user see the result first
 
 st.markdown("---")
 
@@ -611,17 +632,19 @@ if not df.empty:
         st.write("")  # Spacing
         st.write(f"**Total entries:** {len(df)}")
     
-    # Filter dataframe based on search
-    filtered_df = df.copy()
+    # Filter dataframe based on search (optimized)
     if search_query:
         search_lower = search_query.lower()
+        # Use vectorized operations for better performance
         mask = (
-            filtered_df["Company (Target)"].astype(str).str.lower().str.contains(search_lower, na=False) |
-            filtered_df["Acquirer"].astype(str).str.lower().str.contains(search_lower, na=False) |
-            filtered_df["Category"].astype(str).str.lower().str.contains(search_lower, na=False) |
-            filtered_df["Amount"].astype(str).str.lower().str.contains(search_lower, na=False)
+            df["Company (Target)"].astype(str).str.lower().str.contains(search_lower, na=False) |
+            df["Acquirer"].astype(str).str.lower().str.contains(search_lower, na=False) |
+            df["Category"].astype(str).str.lower().str.contains(search_lower, na=False) |
+            df["Amount"].astype(str).str.lower().str.contains(search_lower, na=False)
         )
-        filtered_df = filtered_df[mask].reset_index(drop=True)
+        filtered_df = df[mask].copy()
+    else:
+        filtered_df = df
     
     # Pagination
     total_pages = max(1, (len(filtered_df) + rows_per_page - 1) // rows_per_page)
@@ -634,6 +657,8 @@ if not df.empty:
     else:
         paginated_df = filtered_df.copy()
         page_num = 1
+        start_idx = 0
+        end_idx = len(filtered_df)
     
     # Use data_editor for inline editing
     if not paginated_df.empty:
@@ -657,103 +682,136 @@ if not df.empty:
             "Total Raised": True,
         }
         
-        edited_df = st.data_editor(
+        # Use regular dataframe display - editing will be done via a separate edit button
+        st.dataframe(
             display_df,
             use_container_width=True,
-            hide_index=True,
-            num_rows="dynamic",
-            column_config={
-                "#": st.column_config.NumberColumn("#", disabled=True),
-                "Multiple": st.column_config.TextColumn("Multiple", disabled=True),
-                "Date Added": st.column_config.DatetimeColumn("Date Added", disabled=True),
-            },
-            key="data_editor"
+            hide_index=True
         )
         
-        # Process edits and recalculate multiples
-        if edited_df is not None and not edited_df.empty:
-            # Remove the # column for processing
-            edited_df_clean = edited_df.drop(columns=['#']).copy()
-            
-            # Recalculate multiples for all rows
-            for idx in edited_df_clean.index:
-                amount_str = str(edited_df_clean.at[idx, "Amount"]).upper().strip().replace("$", "").replace(",", "").replace(" ", "")
-                revenue_str = str(edited_df_clean.at[idx, "Revenue"]).upper().strip().replace("$", "").replace(",", "").replace(" ", "")
-                
-                if amount_str != "N/A" and revenue_str != "N/A" and amount_str and revenue_str:
-                    try:
-                        amount_val = None
-                        if "B" in amount_str or "BILLION" in amount_str:
-                            num_part = amount_str.replace("B", "").replace("BILLION", "").strip()
-                            amount_val = float(num_part) * 1000
-                        elif "M" in amount_str or "MILLION" in amount_str:
-                            num_part = amount_str.replace("M", "").replace("MILLION", "").strip()
-                            amount_val = float(num_part)
-                        elif amount_str.replace(".", "").isdigit():
-                            amount_val = float(amount_str)
-                        
-                        revenue_val = None
-                        if "B" in revenue_str or "BILLION" in revenue_str:
-                            num_part = revenue_str.replace("B", "").replace("BILLION", "").strip()
-                            revenue_val = float(num_part) * 1000
-                        elif "M" in revenue_str or "MILLION" in revenue_str:
-                            num_part = revenue_str.replace("M", "").replace("MILLION", "").strip()
-                            revenue_val = float(num_part)
-                        elif revenue_str.replace(".", "").isdigit():
-                            revenue_val = float(revenue_str)
-                        
-                        if amount_val and revenue_val and revenue_val > 0:
-                            multiple_val = amount_val / revenue_val
-                            edited_df_clean.at[idx, "Multiple"] = f"{multiple_val:.0f}x" if multiple_val >= 100 else f"{multiple_val:.2f}x"
-                    except:
-                        pass
-            
-            # Map back to original dataframe indices
-            if search_query or total_pages > 1:
-                # Need to map paginated indices back to original indices
-                original_indices = filtered_df.index[start_idx:end_idx].tolist()
-                for i, orig_idx in enumerate(original_indices):
-                    if i < len(edited_df_clean):
-                        df.iloc[orig_idx] = edited_df_clean.iloc[i]
-            else:
-                df = edited_df_clean.copy()
-            
-            # Save changes
-            save_data(df)
-            st.markdown('<div class="success-message">✓ Changes saved</div>', unsafe_allow_html=True)
-            st.rerun()
+        # Edit button to enable editing mode
+        if 'edit_mode' not in st.session_state:
+            st.session_state.edit_mode = False
         
-        st.markdown("---")
-        
-        # Bulk delete section
-        st.markdown("### [ BULK DELETE ]")
-        col1, col2 = st.columns([3, 1])
+        col1, col2 = st.columns([1, 5])
         with col1:
-            delete_indices = st.multiselect(
-                "Select rows to delete (by row #):",
-                options=list(display_df['#'].values),
-                key="bulk_delete_select"
-            )
-        with col2:
-            delete_btn = st.button("[ DELETE SELECTED ]", key="bulk_delete_btn", disabled=len(delete_indices) == 0)
-        
-        if delete_btn and delete_indices:
-            try:
-                # Map row numbers back to actual indices
-                row_nums_to_delete = [int(r) - 1 for r in delete_indices]  # Convert # to 0-based index
-                if search_query or total_pages > 1:
-                    # Map to filtered indices, then to original indices
-                    filtered_indices_to_delete = [start_idx + r for r in row_nums_to_delete]
-                    original_indices_to_delete = [filtered_df.index[i] for i in filtered_indices_to_delete]
-                else:
-                    original_indices_to_delete = row_nums_to_delete
-                
-                df = df.drop(df.index[sorted(original_indices_to_delete, reverse=True)]).reset_index(drop=True)
-                save_data(df)
-                st.markdown(f'<div class="success-message">✓ Deleted {len(delete_indices)} entry/entries</div>', unsafe_allow_html=True)
+            if st.button("[ EDIT MODE ]" if not st.session_state.edit_mode else "[ VIEW MODE ]", key="toggle_edit"):
+                st.session_state.edit_mode = not st.session_state.edit_mode
                 st.rerun()
-            except Exception as e:
-                st.markdown(f'<div class="error-message">ERROR: {str(e)}</div>', unsafe_allow_html=True)
+        
+        # Show editable form when in edit mode
+        if st.session_state.edit_mode:
+            # Create selection options
+            edit_options = []
+            for i, (idx, row) in enumerate(paginated_df.iterrows()):
+                row_num = start_idx + i + 1
+                edit_options.append((i, idx, row_num, f"#{row_num}: {row['Company (Target)']} <- {row['Acquirer']}"))
+            
+            selected_option = st.selectbox(
+                "Select entry to edit:",
+                options=range(len(edit_options)),
+                format_func=lambda x: edit_options[x][3],
+                key="edit_selector"
+            )
+            
+            if selected_option is not None:
+                i, idx, row_num, _ = edit_options[selected_option]
+                row = paginated_df.iloc[i]
+                
+                st.markdown("---")
+                
+                with st.form(f"edit_form_{row_num}", clear_on_submit=False):
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        edit_target = st.text_input("Company (Target):", value=str(row.get("Company (Target)", "")), key=f"target_{row_num}")
+                        edit_acquirer = st.text_input("Acquirer:", value=str(row.get("Acquirer", "")), key=f"acquirer_{row_num}")
+                        edit_category = st.text_input("Category:", value=str(row.get("Category", "")), key=f"category_{row_num}")
+                        edit_amount = st.text_input("Amount:", value=str(row.get("Amount", "")), key=f"amount_{row_num}")
+                        edit_revenue = st.text_input("Revenue:", value=str(row.get("Revenue", "")), key=f"revenue_{row_num}")
+                        edit_url = st.text_input("Company URL:", value=str(row.get("Company URL", "")), key=f"url_{row_num}")
+                    
+                    with col2:
+                        edit_last_round = st.text_input("Last Round Raised:", value=str(row.get("Last Round Raised", "")), key=f"last_{row_num}")
+                        edit_valuation = st.text_input("Valuation of Last Round:", value=str(row.get("Valuation of Last Round", "")), key=f"val_{row_num}")
+                        edit_total = st.text_input("Total Raised:", value=str(row.get("Total Raised", "")), key=f"total_{row_num}")
+                        edit_desc = st.text_area("Company Description:", value=str(row.get("Company Description", "")), height=80, key=f"desc_{row_num}")
+                        edit_rationale = st.text_area("Rationale:", value=str(row.get("Rationale", "")), height=80, key=f"rationale_{row_num}")
+                    
+                    # Show calculated multiple
+                    calculated_multiple = str(row.get("Multiple", "N/A"))
+                    if edit_amount and edit_revenue and str(edit_amount).upper().strip() != "N/A" and str(edit_revenue).upper().strip() != "N/A":
+                        try:
+                            amount_str = str(edit_amount).upper().strip().replace("$", "").replace(",", "").replace(" ", "")
+                            revenue_str = str(edit_revenue).upper().strip().replace("$", "").replace(",", "").replace(" ", "")
+                            
+                            amount_val = None
+                            if "B" in amount_str:
+                                amount_val = float(amount_str.replace("B", "").strip()) * 1000
+                            elif "M" in amount_str:
+                                amount_val = float(amount_str.replace("M", "").strip())
+                            
+                            revenue_val = None
+                            if "B" in revenue_str:
+                                revenue_val = float(revenue_str.replace("B", "").strip()) * 1000
+                            elif "M" in revenue_str:
+                                revenue_val = float(revenue_str.replace("M", "").strip())
+                            
+                            if amount_val and revenue_val and revenue_val > 0:
+                                multiple_val = amount_val / revenue_val
+                                calculated_multiple = f"{multiple_val:.0f}x" if multiple_val >= 100 else f"{multiple_val:.2f}x"
+                        except:
+                            pass
+                    
+                    st.markdown(f"**Multiple (auto-calculated):** {calculated_multiple}")
+                    
+                    col_save, col_delete = st.columns([1, 1])
+                    with col_save:
+                        save_btn = st.form_submit_button("[ SAVE CHANGES ]")
+                    with col_delete:
+                        delete_btn = st.form_submit_button("[ DELETE ENTRY ]")
+                    
+                    if delete_btn:
+                        # Map back to original index
+                        if search_query or total_pages > 1:
+                            orig_idx = filtered_df.index[start_idx + i]
+                        else:
+                            orig_idx = idx
+                        
+                        # Delete the row
+                        df = df.drop(df.index[orig_idx]).reset_index(drop=True)
+                        save_data(df)
+                        st.session_state.df_cache = df
+                        st.session_state.df_cache_timestamp = os.path.getmtime(CSV_FILE) if os.path.exists(CSV_FILE) else 0
+                        st.success(f"Entry #{row_num} deleted!")
+                        st.rerun()
+                    
+                    if save_btn:
+                        # Map back to original index
+                        if search_query or total_pages > 1:
+                            orig_idx = filtered_df.index[start_idx + i]
+                        else:
+                            orig_idx = idx
+                        
+                        # Update row
+                        df.at[orig_idx, "Company (Target)"] = edit_target.strip() if edit_target else "N/A"
+                        df.at[orig_idx, "Acquirer"] = edit_acquirer.strip() if edit_acquirer else "N/A"
+                        df.at[orig_idx, "Category"] = edit_category.strip() if edit_category else "N/A"
+                        df.at[orig_idx, "Amount"] = edit_amount.strip() if edit_amount else "N/A"
+                        df.at[orig_idx, "Revenue"] = edit_revenue.strip() if edit_revenue else "N/A"
+                        df.at[orig_idx, "Multiple"] = calculated_multiple
+                        df.at[orig_idx, "Rationale"] = edit_rationale.strip() if edit_rationale else "N/A"
+                        df.at[orig_idx, "Company URL"] = edit_url.strip() if edit_url else "N/A"
+                        df.at[orig_idx, "Company Description"] = edit_desc.strip() if edit_desc else "N/A"
+                        df.at[orig_idx, "Last Round Raised"] = edit_last_round.strip() if edit_last_round else "N/A"
+                        df.at[orig_idx, "Valuation of Last Round"] = edit_valuation.strip() if edit_valuation else "N/A"
+                        df.at[orig_idx, "Total Raised"] = edit_total.strip() if edit_total else "N/A"
+                        
+                        save_data(df)
+                        st.session_state.df_cache = df
+                        st.session_state.df_cache_timestamp = os.path.getmtime(CSV_FILE) if os.path.exists(CSV_FILE) else 0
+                        st.success(f"Entry #{row_num} saved!")
+                        st.rerun()
 
 else:
     st.markdown("### [ DATABASE ]")
