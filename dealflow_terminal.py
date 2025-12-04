@@ -1,18 +1,10 @@
 import streamlit as st
 import pandas as pd
-from playwright.sync_api import sync_playwright
 import openai
 import os
 import json
 from datetime import datetime
-from duckduckgo_search import DDGS
-
-# Try to import Exa for better search
-try:
-    from exa_py import Exa
-    EXA_AVAILABLE = True
-except ImportError:
-    EXA_AVAILABLE = False
+from exa_py import Exa
 
 
 # Configure page
@@ -26,7 +18,7 @@ st.set_page_config(
 # Terminal-style CSS
 st.markdown("""
 <style>
-    @import url('https://geistfont.vercel.app/geist.css');
+    @import url('https://fonts.googleapis.com/css2?family=Geist+Mono:wght@100;200;300;400;500&display=swap');
     
     .stApp {
         background-color: #000000;
@@ -39,22 +31,30 @@ st.markdown("""
         padding-bottom: 2rem;
     }
     
+    * {
+        font-family: 'Geist Mono', 'SF Mono', 'Consolas', monospace !important;
+    }
+    
     h1, h2, h3, h4, h5, h6, p, div, span, label, input, textarea, button {
-        font-family: 'Geist Mono', monospace !important;
+        font-family: 'Geist Mono', 'SF Mono', 'Consolas', monospace !important;
         color: #FFFFFF !important;
+        font-size: 12px !important;
+        font-weight: 300 !important;
     }
     
     h1 {
         color: #888888 !important;
-        font-weight: bold;
+        font-weight: 400 !important;
         letter-spacing: 2px;
         margin-bottom: 0 !important;
+        font-size: 22px !important;
     }
     
     .byline {
-        color: #888888;
-        font-family: 'Geist Mono', monospace;
-        font-size: 0.8rem;
+        color: #666666;
+        font-family: 'Geist Mono', 'SF Mono', 'Consolas', monospace;
+        font-size: 10px !important;
+        font-weight: 300 !important;
         margin-top: 0;
         letter-spacing: 1px;
     }
@@ -70,79 +70,104 @@ st.markdown("""
     
     .stTextInput > div > div > input {
         background-color: #000000;
-        border: 1px solid #FFFFFF;
+        border: 1px solid #444444;
         color: #FFFFFF;
         border-radius: 0px;
-        font-family: 'Geist Mono', monospace !important;
+        font-family: 'Geist Mono', 'SF Mono', 'Consolas', monospace !important;
+        font-size: 12px !important;
+        font-weight: 300 !important;
     }
     
     .stTextInput > div > div > input:focus {
         border: 1px solid #00FF00;
-        box-shadow: 0 0 5px #00FF00;
+        box-shadow: 0 0 3px #00FF00;
     }
     
     .stTextArea > div > div > textarea {
         background-color: #000000;
-        border: 1px solid #FFFFFF;
+        border: 1px solid #444444;
         color: #FFFFFF;
         border-radius: 0px;
-        font-family: 'Geist Mono', monospace !important;
+        font-family: 'Geist Mono', 'SF Mono', 'Consolas', monospace !important;
+        font-size: 12px !important;
+        font-weight: 300 !important;
     }
     
     .stTextArea > div > div > textarea:focus {
         border: 1px solid #00FF00;
-        box-shadow: 0 0 5px #00FF00;
+        box-shadow: 0 0 3px #00FF00;
     }
     
     button {
         background-color: #000000 !important;
-        border: 1px solid #FFFFFF !important;
-        color: #FFFFFF !important;
+        border: 1px solid #444444 !important;
+        color: #AAAAAA !important;
         border-radius: 0px !important;
-        font-family: 'Geist Mono', monospace !important;
-        padding: 0.5rem 1rem !important;
+        font-family: 'Geist Mono', 'SF Mono', 'Consolas', monospace !important;
+        font-size: 11px !important;
+        font-weight: 300 !important;
+        padding: 0.4rem 0.8rem !important;
     }
     
     button:hover {
         border-color: #00FF00 !important;
         color: #00FF00 !important;
-        box-shadow: 0 0 5px #00FF00 !important;
+        box-shadow: 0 0 3px #00FF00 !important;
     }
     
     .stDataFrame {
         background-color: #000000;
-        border: 1px solid #FFFFFF;
+        border: 1px solid #333333;
+        font-size: 11px !important;
+    }
+    
+    .stDataFrame td, .stDataFrame th {
+        font-size: 11px !important;
+        font-weight: 300 !important;
+        padding: 4px 8px !important;
     }
     
     .metric-container {
-        border: 1px solid #FFFFFF;
-        padding: 1rem;
+        border: 1px solid #333333;
+        padding: 0.8rem;
         margin: 0.5rem 0;
         background-color: #000000;
     }
     
     .success-message {
         color: #00FF00;
-        font-family: 'Geist Mono', monospace;
+        font-family: 'Geist Mono', 'SF Mono', 'Consolas', monospace;
+        font-size: 11px;
+        font-weight: 300;
         border: 1px solid #00FF00;
-        padding: 0.5rem;
-        margin: 1rem 0;
+        padding: 0.4rem;
+        margin: 0.8rem 0;
     }
     
     .error-message {
         color: #FF0000;
-        font-family: 'Geist Mono', monospace;
+        font-family: 'Geist Mono', 'SF Mono', 'Consolas', monospace;
+        font-size: 11px;
+        font-weight: 300;
         border: 1px solid #FF0000;
-        padding: 0.5rem;
-        margin: 1rem 0;
+        padding: 0.4rem;
+        margin: 0.8rem 0;
     }
     
     .warning-message {
         color: #FFAA00;
-        font-family: 'Geist Mono', monospace;
+        font-family: 'Geist Mono', 'SF Mono', 'Consolas', monospace;
+        font-size: 11px;
+        font-weight: 300;
         border: 1px solid #FFAA00;
-        padding: 0.5rem;
-        margin: 1rem 0;
+        padding: 0.4rem;
+        margin: 0.8rem 0;
+    }
+    
+    /* Streamlit info/warning/success boxes */
+    .stAlert {
+        font-size: 11px !important;
+        font-weight: 300 !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -190,74 +215,67 @@ def save_data(df):
     """Save DataFrame to CSV file."""
     df.to_csv(CSV_FILE, index=False)
 
-def scrape_article(url):
-    """Scrape text content from a URL using Playwright for advanced scraping."""
-    try:
-        with sync_playwright() as p:
-            # Launch browser in headless mode
-            browser = p.chromium.launch(headless=True)
-            context = browser.new_context(
-                user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                viewport={'width': 1920, 'height': 1080}
-            )
-            page = context.new_page()
-            
-            # Navigate to URL and wait for content to load
-            page.goto(url, wait_until='networkidle', timeout=30000)
-            
-            # Wait a bit for any dynamic content
-            page.wait_for_timeout(2000)
-            
-            # Try to find main article content using common selectors
-            # This handles paywalls, dynamic loading, etc.
-            article_selectors = [
-                'article',
-                '[role="article"]',
-                '.article-content',
-                '.article-body',
-                '.post-content',
-                '.entry-content',
-                'main',
-                '.content',
-                'body'
-            ]
-            
-            text_content = None
-            for selector in article_selectors:
-                try:
-                    element = page.query_selector(selector)
-                    if element:
-                        text_content = element.inner_text()
-                        if len(text_content) > 500:  # Found substantial content
-                            break
-                except:
-                    continue
-            
-            # Fallback to body if no article found
-            if not text_content or len(text_content) < 500:
-                text_content = page.inner_text('body')
-            
-            browser.close()
-            
-            # Clean up text
-            lines = (line.strip() for line in text_content.splitlines())
-            chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
-            text = ' '.join(chunk for chunk in chunks if chunk)
-            
-            return text[:8000]  # Limit to 8000 characters for API
-    except Exception as e:
-        raise Exception(f"Error scraping URL: {str(e)}")
+def get_exa_client():
+    """Get Exa client with API key."""
+    api_key = st.secrets.get("EXA_API_KEY") or os.getenv("EXA_API_KEY")
+    if not api_key:
+        raise Exception("EXA_API_KEY not found. Please set it in Streamlit secrets or environment variable.")
+    return Exa(api_key=api_key)
 
-def search_with_exa(company_name):
-    """Search using Exa API for better company information."""
+def fetch_article_with_exa(url):
+    """Fetch article content using Exa's get_contents API."""
     try:
-        exa_api_key = st.secrets.get("EXA_API_KEY") or os.getenv("EXA_API_KEY")
-        if not exa_api_key:
-            st.warning("⚠️ EXA_API_KEY not found in secrets")
-            return None
+        exa = get_exa_client()
+        st.info("Fetching article content via Exa...")
         
-        st.info(f"🔍 Using Exa Search for: {company_name}")
-        exa = Exa(api_key=exa_api_key)
+        # Use Exa's get_contents to fetch the URL directly
+        result = exa.get_contents([url], text=True)
+        
+        if result.results and len(result.results) > 0:
+            article = result.results[0]
+            text_content = getattr(article, 'text', '') or ''
+            title = getattr(article, 'title', '') or ''
+            
+            if text_content:
+                st.success(f"Fetched article: {title[:50]}...")
+                return f"Title: {title}\n\nContent:\n{text_content[:8000]}"
+        
+        st.warning("Exa couldn't fetch article content, will search for information instead")
+        return None
+    except Exception as e:
+        st.warning(f"Exa fetch failed: {e}")
+        return None
+
+def search_article_with_exa(url):
+    """Search for article information using Exa when direct fetch fails."""
+    try:
+        exa = get_exa_client()
+        st.info("Searching for article information via Exa...")
+        
+        # Search for the article content
+        results = exa.search_and_contents(
+            url,
+            num_results=3,
+            text=True
+        )
+        
+        if results.results:
+            combined = []
+            for r in results.results:
+                text = getattr(r, 'text', '') or ''
+                combined.append(f"Title: {r.title}\nURL: {r.url}\nContent: {text[:2000]}\n---")
+            return "\n\n".join(combined)[:8000]
+        
+        return None
+    except Exception as e:
+        st.warning(f"Exa search failed: {e}")
+        return None
+
+def search_company_info(company_name):
+    """Search for company information using Exa."""
+    try:
+        exa = get_exa_client()
+        st.info(f"Searching for company info: {company_name}")
         
         # Search for company revenue and funding information
         search_queries = [
@@ -269,14 +287,13 @@ def search_with_exa(company_name):
         all_results = []
         for query in search_queries:
             try:
-                st.info(f"  → Searching: {query}")
-                # Use correct Exa API parameters
+                st.info(f"Searching: {query}")
                 results = exa.search_and_contents(
                     query,
                     num_results=5,
-                    text=True  # Get full text content
+                    text=True
                 )
-                st.info(f"  → Got {len(results.results)} results for this query")
+                st.info(f"Got {len(results.results)} results")
                 for result in results.results:
                     text_content = getattr(result, 'text', '') or ''
                     all_results.append({
@@ -285,13 +302,13 @@ def search_with_exa(company_name):
                         "text": text_content[:2000] if text_content else ""
                     })
             except Exception as e:
-                st.warning(f"Exa query failed: {e}")
+                st.warning(f"Query failed: {e}")
                 continue
         
         if all_results:
-            st.success(f"✓ Exa found {len(all_results)} total results")
+            st.success(f"Found {len(all_results)} results for {company_name}")
         else:
-            st.warning("Exa returned no results")
+            st.warning(f"No results found for {company_name}")
         
         # Combine results
         combined_text = "\n\n".join([
@@ -299,68 +316,16 @@ def search_with_exa(company_name):
             for r in all_results[:10]
         ])
         
-        return combined_text[:10000] if combined_text else None
+        return combined_text[:10000] if combined_text else ""
     except Exception as e:
-        st.error(f"Exa error: {e}")
-        return None
-
-def search_company_info(company_name):
-    """Search the web for company information with targeted queries."""
-    # Try Exa first if available
-    if EXA_AVAILABLE:
-        st.info("Exa library is available, attempting Exa search...")
-        exa_results = search_with_exa(company_name)
-        if exa_results:
-            return exa_results
-        st.warning("Exa search failed, falling back to DuckDuckGo...")
-    else:
-        st.warning("Exa library not available, using DuckDuckGo...")
-    
-    # Fall back to DuckDuckGo
-    try:
-        with DDGS() as ddgs:
-            # More specific search queries for better results
-            search_queries = [
-                f"{company_name} revenue 2024 2023 annual ARR",
-                f"{company_name} funding round Series valuation Crunchbase",
-                f"{company_name} raised million funding",
-                f"{company_name} company revenue financials",
-                f'site:crunchbase.com "{company_name}"',
-                f'site:pitchbook.com "{company_name}"'
-            ]
-            
-            search_results = []
-            for query in search_queries:
-                try:
-                    results = list(ddgs.text(query, max_results=5))
-                    search_results.extend(results)
-                except Exception as e:
-                    continue
-            
-            # Remove duplicates based on URL
-            seen_urls = set()
-            unique_results = []
-            for r in search_results:
-                url = r.get('href', '')
-                if url and url not in seen_urls:
-                    seen_urls.add(url)
-                    unique_results.append(r)
-            
-            # Combine all search result snippets with more detail
-            combined_text = "\n\n".join([
-                f"Title: {r.get('title', '')}\nURL: {r.get('href', '')}\nContent: {r.get('body', '')}\n---" 
-                for r in unique_results[:15]  # Get more results
-            ])
-            
-            return combined_text[:8000]  # Increase limit for more context
-    except Exception as e:
-        return f"Error searching: {str(e)}"
+        st.error(f"Search error: {e}")
+        return ""
 
 def extract_deal_info(text, company_name=None):
     """Extract deal information using OpenAI with web search enhancement."""
     
     # Debug: Show article text length
-    st.info(f"📄 Article text length: {len(text)} characters")
+    st.info(f"Article text length: {len(text)} characters")
     if len(text) < 100:
         st.error(f"Article text is too short! Content: {text[:500]}")
     
@@ -406,7 +371,7 @@ Article text:
         content = content.strip()
         
         basic_data = json.loads(content)
-        st.info(f"📊 Initial extraction: {basic_data}")
+        st.info(f"Initial extraction: {basic_data}")
         extracted_company_name = basic_data.get("Company (Target)", company_name or "")
         
         # Now search the web for additional company information
@@ -573,48 +538,56 @@ if ingest_button and url:
         # Set flag to prevent data editor from processing during ingestion
         st.session_state.processing_ingestion = True
         
-        with st.spinner("Scraping article..."):
+        with st.spinner("Fetching article via Exa..."):
             try:
-                article_text = scrape_article(url)
-                st.markdown('<div class="success-message">✓ Article scraped successfully</div>', unsafe_allow_html=True)
+                # Try to fetch article content directly with Exa
+                article_text = fetch_article_with_exa(url)
                 
-                # Debug: Show first 500 chars of scraped content
-                with st.expander("🔍 Debug: Scraped article content (first 1000 chars)", expanded=False):
-                    st.text(article_text[:1000] if article_text else "NO CONTENT")
+                # If direct fetch fails, search for the article
+                if not article_text:
+                    article_text = search_article_with_exa(url)
                 
-                with st.spinner("Extracting deal information..."):
-                    deal_data = extract_deal_info(article_text)
+                if article_text:
+                    st.markdown('<div class="success-message">✓ Article fetched via Exa</div>', unsafe_allow_html=True)
                     
-                    if deal_data:
-                        # Add date
-                        deal_data["Date Added"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    # Debug: Show fetched content
+                    with st.expander("Debug: Fetched article content (first 1000 chars)", expanded=False):
+                        st.text(article_text[:1000] if article_text else "NO CONTENT")
+                    
+                    with st.spinner("Extracting deal information..."):
+                        deal_data = extract_deal_info(article_text)
                         
-                        # Convert to DataFrame row
-                        new_row = pd.DataFrame([deal_data])
-                        
-                        # Append to existing data
-                        df = pd.concat([df, new_row], ignore_index=True)
-                        
-                        # Save to CSV
-                        save_data(df)
-                        
-                        # Update cache
-                        st.session_state.df_cache = df
-                        st.session_state.df_cache_timestamp = os.path.getmtime(CSV_FILE) if os.path.exists(CSV_FILE) else 0
-                        
-                        st.markdown('<div class="success-message">✓ Data ingested and saved to mergers.csv</div>', unsafe_allow_html=True)
-                        st.json(deal_data)
-                        
-                        # Clear the editor hash to force refresh
-                        if 'last_editor_hash' in st.session_state:
-                            del st.session_state.last_editor_hash
-                    else:
-                        st.markdown('<div class="error-message">ERROR: Failed to extract deal information</div>', unsafe_allow_html=True)
+                        if deal_data:
+                            # Add date
+                            deal_data["Date Added"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                            
+                            # Convert to DataFrame row
+                            new_row = pd.DataFrame([deal_data])
+                            
+                            # Append to existing data
+                            df = pd.concat([df, new_row], ignore_index=True)
+                            
+                            # Save to CSV
+                            save_data(df)
+                            
+                            # Update cache
+                            st.session_state.df_cache = df
+                            st.session_state.df_cache_timestamp = os.path.getmtime(CSV_FILE) if os.path.exists(CSV_FILE) else 0
+                            
+                            st.markdown('<div class="success-message">✓ Data ingested and saved to mergers.csv</div>', unsafe_allow_html=True)
+                            st.json(deal_data)
+                            
+                            # Clear the editor hash to force refresh
+                            if 'last_editor_hash' in st.session_state:
+                                del st.session_state.last_editor_hash
+                        else:
+                            st.markdown('<div class="error-message">ERROR: Failed to extract deal information</div>', unsafe_allow_html=True)
+                else:
+                    st.markdown('<div class="error-message">ERROR: Could not fetch article content via Exa</div>', unsafe_allow_html=True)
             except Exception as e:
                 st.markdown(f'<div class="error-message">ERROR: {str(e)}</div>', unsafe_allow_html=True)
             finally:
                 st.session_state.processing_ingestion = False
-                # Don't rerun immediately - let user see the result first
 
 st.markdown("---")
 
