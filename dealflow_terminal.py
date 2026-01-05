@@ -12,13 +12,6 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # ============================================================================
-# CONFIGURATION
-# ============================================================================
-
-# Allowed email domain for access (change this to your company domain)
-ALLOWED_EMAIL_DOMAIN = os.getenv("ALLOWED_EMAIL_DOMAIN", "pacecapital.com")
-
-# ============================================================================
 # SUPABASE CLIENT
 # ============================================================================
 
@@ -40,182 +33,6 @@ def is_supabase_configured() -> bool:
     return bool(url and key)
 
 
-# ============================================================================
-# AUTHENTICATION
-# ============================================================================
-
-def check_email_domain(email: str) -> bool:
-    """Check if email belongs to the allowed domain."""
-    if not email:
-        return False
-    return email.lower().endswith(f"@{ALLOWED_EMAIL_DOMAIN.lower()}")
-
-
-def show_confidential_page():
-    """Display the confidential information page for unauthorized users."""
-    st.markdown("""
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Geist+Mono:wght@100;200;300;400;500&display=swap');
-        
-        .stApp {
-            background-color: #000000;
-            color: #FFFFFF;
-        }
-        
-        .confidential-container {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            min-height: 80vh;
-            text-align: center;
-            font-family: 'Geist Mono', 'SF Mono', 'Consolas', monospace;
-        }
-        
-        .confidential-icon {
-            font-size: 64px;
-            margin-bottom: 24px;
-        }
-        
-        .confidential-title {
-            font-size: 28px;
-            font-weight: 400;
-            color: #FF4444;
-            margin-bottom: 16px;
-            letter-spacing: 3px;
-        }
-        
-        .confidential-message {
-            font-size: 14px;
-            color: #888888;
-            max-width: 400px;
-            line-height: 1.6;
-            margin-bottom: 32px;
-        }
-        
-        .confidential-domain {
-            font-size: 12px;
-            color: #444444;
-            border: 1px solid #333333;
-            padding: 8px 16px;
-            margin-top: 16px;
-        }
-    </style>
-    
-    <div class="confidential-container">
-        <div class="confidential-icon">🔒</div>
-        <div class="confidential-title">CONFIDENTIAL</div>
-        <div class="confidential-message">
-            This information is proprietary and confidential.<br><br>
-            Access is restricted to authorized Pace Capital team members only.
-        </div>
-        <div class="confidential-domain">
-            Authorized domain: @""" + ALLOWED_EMAIL_DOMAIN + """
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-
-def show_login_page():
-    """Display the login page with Google OAuth."""
-    st.markdown("""
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Geist+Mono:wght@100;200;300;400;500&display=swap');
-        
-        .stApp {
-            background-color: #000000;
-            color: #FFFFFF;
-        }
-        
-        .login-container {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            text-align: center;
-            font-family: 'Geist Mono', 'SF Mono', 'Consolas', monospace;
-            padding-top: 15vh;
-            margin-bottom: 24px;
-        }
-        
-        .login-title {
-            font-size: 24px;
-            font-weight: 400;
-            color: #FFFFFF;
-            margin-bottom: 8px;
-            letter-spacing: 2px;
-        }
-        
-        .login-subtitle {
-            font-size: 12px;
-            color: #666666;
-            margin-bottom: 32px;
-        }
-        
-        .login-message {
-            font-size: 13px;
-            color: #888888;
-            max-width: 350px;
-            line-height: 1.6;
-            margin-bottom: 24px;
-        }
-        
-        .domain-note {
-            font-size: 11px;
-            color: #444444;
-            margin-top: 16px;
-        }
-    </style>
-    
-    <div class="login-container">
-        <div class="login-title">M&A_TRACKER_V1.0</div>
-        <div class="login-subtitle">by Pace Capital</div>
-        <div class="login-message">
-            Sign in with your Pace Capital Google account to access the M&A deal tracker.
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    # Center the login form
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        # Simple email-based authentication
-        # In production, replace with proper Google OAuth
-        email = st.text_input("Email", placeholder=f"you@{ALLOWED_EMAIL_DOMAIN}", key="login_email")
-        
-        if st.button("[ SIGN IN ]", key="sign_in_btn", use_container_width=True):
-            if email:
-                if check_email_domain(email):
-                    st.session_state.authenticated = True
-                    st.session_state.user_email = email
-                    st.rerun()
-                else:
-                    st.error(f"Access denied. Please use a @{ALLOWED_EMAIL_DOMAIN} email.")
-            else:
-                st.warning("Please enter your email address.")
-        
-        st.markdown(f"""
-        <div style="text-align: center; margin-top: 16px;">
-            <span style="font-size: 11px; color: #444444; font-family: 'Geist Mono', monospace;">
-                Access restricted to @{ALLOWED_EMAIL_DOMAIN}
-            </span>
-        </div>
-        """, unsafe_allow_html=True)
-
-
-def init_auth():
-    """Initialize authentication state."""
-    if 'authenticated' not in st.session_state:
-        st.session_state.authenticated = False
-    if 'user_email' not in st.session_state:
-        st.session_state.user_email = None
-
-
-def logout():
-    """Log out the current user."""
-    st.session_state.authenticated = False
-    st.session_state.user_email = None
-    st.rerun()
 
 
 # ============================================================================
@@ -863,43 +680,13 @@ Web search results about the company (SEARCH THESE CAREFULLY FOR REVENUE DATA):
 # ============================================================================
 
 def main_app():
-    """Main application UI (only shown to authenticated users)."""
+    """Main application UI."""
     
-    # Header with user info and logout
-    header_col1, header_col2 = st.columns([3, 2])
-    with header_col1:
-        st.markdown("""
-        <h1>M&A_TRACKER_V1.0_<span class="blink">█</span></h1>
-        <p class="byline">pace capital</p>
-        """, unsafe_allow_html=True)
-    with header_col2:
-        st.markdown("""
-        <style>
-            /* Style the popover trigger */
-            [data-testid="stPopover"] > div:first-child button {
-                background-color: transparent !important;
-                border: 1px solid #00FF00 !important;
-                color: #00FF00 !important;
-                font-family: 'Geist Mono', 'SF Mono', 'Consolas', monospace !important;
-                font-size: 12px !important;
-                padding: 6px 16px !important;
-                border-radius: 0 !important;
-                white-space: nowrap !important;
-            }
-            [data-testid="stPopover"] > div:first-child button:hover {
-                background-color: #00FF00 !important;
-                color: #000000 !important;
-            }
-            /* Push popover to the right */
-            [data-testid="stPopover"] {
-                float: right;
-            }
-        </style>
-        """, unsafe_allow_html=True)
-        
-        with st.popover(st.session_state.user_email):
-            if st.button("[ LOGOUT ]", key="logout_btn", use_container_width=True):
-                logout()
+    # Header
+    st.markdown("""
+    <h1>M&A_TRACKER_V1.0_<span class="blink">█</span></h1>
+    <p class="byline">pace capital</p>
+    """, unsafe_allow_html=True)
     
     # Data source indicator
     if is_supabase_configured():
@@ -1170,11 +957,4 @@ def main_app():
 # ENTRY POINT
 # ============================================================================
 
-# Initialize authentication
-init_auth()
-
-# Show appropriate page based on auth state
-if st.session_state.authenticated:
-    main_app()
-else:
-    show_login_page()
+main_app()
