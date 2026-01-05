@@ -2,8 +2,6 @@
 
 A terminal-style M&A deal tracking dashboard built with Streamlit. Ingest acquisition news articles and automatically extract deal information using AI.
 
-![Dashboard Preview](https://via.placeholder.com/800x400?text=M%26A+Tracker+Dashboard)
-
 ## Features
 
 - 🔐 **Email-based Access Control** - Restricted to `@pacecapital.com` emails
