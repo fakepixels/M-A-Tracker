@@ -12,6 +12,98 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # ============================================================================
+# ACCESS CONTROL
+# ============================================================================
+
+# Passwords (set these in your secrets.toml)
+VIEWER_PASSWORD = st.secrets.get("VIEWER_PASSWORD") or os.getenv("VIEWER_PASSWORD", "pace2024")
+ADMIN_PASSWORD = st.secrets.get("ADMIN_PASSWORD") or os.getenv("ADMIN_PASSWORD", "admin2024")
+
+
+def check_viewer_password():
+    """Check if the viewer has entered the correct password."""
+    if 'viewer_authenticated' not in st.session_state:
+        st.session_state.viewer_authenticated = False
+    
+    return st.session_state.viewer_authenticated
+
+
+def check_admin_mode():
+    """Check if admin mode is enabled."""
+    if 'admin_mode' not in st.session_state:
+        st.session_state.admin_mode = False
+    
+    return st.session_state.admin_mode
+
+
+def show_password_page():
+    """Display the password entry page."""
+    st.markdown("""
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Geist+Mono:wght@100;200;300;400;500&display=swap');
+        
+        .stApp {
+            background-color: #000000;
+            color: #FFFFFF;
+        }
+        
+        .password-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            font-family: 'Geist Mono', 'SF Mono', 'Consolas', monospace;
+            padding-top: 15vh;
+            margin-bottom: 24px;
+        }
+        
+        .password-title {
+            font-size: 24px;
+            font-weight: 400;
+            color: #FFFFFF;
+            margin-bottom: 8px;
+            letter-spacing: 2px;
+        }
+        
+        .password-subtitle {
+            font-size: 12px;
+            color: #666666;
+            margin-bottom: 32px;
+        }
+        
+        .password-message {
+            font-size: 13px;
+            color: #888888;
+            max-width: 350px;
+            line-height: 1.6;
+            margin-bottom: 24px;
+        }
+    </style>
+    
+    <div class="password-container">
+        <div class="password-title">M&A_TRACKER_V1.0</div>
+        <div class="password-subtitle">Pace Capital</div>
+        <div class="password-message">
+            Enter the team password to access the deal tracker.
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Center the password form
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        password = st.text_input("Password", type="password", placeholder="Enter team password", key="viewer_password_input")
+        
+        if st.button("[ ENTER ]", key="enter_btn", use_container_width=True):
+            if password == VIEWER_PASSWORD:
+                st.session_state.viewer_authenticated = True
+                st.rerun()
+            else:
+                st.error("Incorrect password.")
+
+
+# ============================================================================
 # SUPABASE CLIENT
 # ============================================================================
 
@@ -682,11 +774,41 @@ Web search results about the company (SEARCH THESE CAREFULLY FOR REVENUE DATA):
 def main_app():
     """Main application UI."""
     
-    # Header
-    st.markdown("""
-    <h1>M&A_TRACKER_V1.0_<span class="blink">█</span></h1>
-    <p class="byline">pace capital</p>
-    """, unsafe_allow_html=True)
+    # Header with admin toggle
+    header_col1, header_col2 = st.columns([3, 2])
+    with header_col1:
+        st.markdown("""
+        <h1>M&A_TRACKER_V1.0_<span class="blink">█</span></h1>
+        <p class="byline">pace capital</p>
+        """, unsafe_allow_html=True)
+    
+    with header_col2:
+        # Admin mode toggle
+        st.markdown("""
+        <style>
+            .admin-toggle {
+                display: flex;
+                justify-content: flex-end;
+                padding-top: 1rem;
+            }
+        </style>
+        """, unsafe_allow_html=True)
+        
+        if check_admin_mode():
+            st.markdown('<div style="text-align: right;"><span style="color: #00FF00; font-size: 11px; border: 1px solid #00FF00; padding: 4px 8px;">🔓 ADMIN MODE</span></div>', unsafe_allow_html=True)
+            if st.button("[ EXIT ADMIN ]", key="exit_admin_btn"):
+                st.session_state.admin_mode = False
+                st.rerun()
+        else:
+            with st.popover("🔒"):
+                st.markdown("**Admin Access**")
+                admin_pw = st.text_input("Admin password:", type="password", key="admin_pw_input")
+                if st.button("[ UNLOCK ]", key="unlock_admin_btn"):
+                    if admin_pw == ADMIN_PASSWORD:
+                        st.session_state.admin_mode = True
+                        st.rerun()
+                    else:
+                        st.error("Wrong password")
     
     # Data source indicator
     if is_supabase_configured():
@@ -710,13 +832,17 @@ def main_app():
         else:
             df = st.session_state.df_cache.copy()
     
-    # Input section
-    st.markdown("### [ INPUT ]")
-    url = st.text_input("Article URL:", placeholder="https://example.com/news/acquisition-article", key="url_input")
-    
-    col1, col2 = st.columns([1, 5])
-    with col1:
-        ingest_button = st.button("[ INGEST ]", key="ingest_btn")
+    # Input section (ADMIN ONLY)
+    if check_admin_mode():
+        st.markdown("### [ INPUT ]")
+        url = st.text_input("Article URL:", placeholder="https://example.com/news/acquisition-article", key="url_input")
+        
+        col1, col2 = st.columns([1, 5])
+        with col1:
+            ingest_button = st.button("[ INGEST ]", key="ingest_btn")
+    else:
+        ingest_button = False
+        url = None
     
     if ingest_button and url:
         if not url.startswith(("http://", "https://")):
@@ -844,13 +970,18 @@ def main_app():
             if 'edit_mode' not in st.session_state:
                 st.session_state.edit_mode = False
             
-            col1, col2 = st.columns([1, 5])
-            with col1:
-                if st.button("[ EDIT MODE ]" if not st.session_state.edit_mode else "[ VIEW MODE ]", key="toggle_edit"):
-                    st.session_state.edit_mode = not st.session_state.edit_mode
-                    st.rerun()
+            # Edit mode button (ADMIN ONLY)
+            if check_admin_mode():
+                col1, col2 = st.columns([1, 5])
+                with col1:
+                    if st.button("[ EDIT MODE ]" if not st.session_state.edit_mode else "[ VIEW MODE ]", key="toggle_edit"):
+                        st.session_state.edit_mode = not st.session_state.edit_mode
+                        st.rerun()
+            else:
+                # Reset edit mode if not admin
+                st.session_state.edit_mode = False
             
-            if st.session_state.edit_mode:
+            if st.session_state.edit_mode and check_admin_mode():
                 edit_options = []
                 for i, (idx, row) in enumerate(paginated_df.iterrows()):
                     row_num = start_idx + i + 1
@@ -957,4 +1088,8 @@ def main_app():
 # ENTRY POINT
 # ============================================================================
 
-main_app()
+# Check if viewer is authenticated
+if check_viewer_password():
+    main_app()
+else:
+    show_password_page()
