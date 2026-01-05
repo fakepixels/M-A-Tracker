@@ -816,8 +816,6 @@ def main_app():
     else:
         st.markdown('<span style="color: #FFAA00; font-size: 10px;">● USING LOCAL CSV (Configure Supabase for cloud sync)</span>', unsafe_allow_html=True)
     
-    st.markdown("---")
-    
     # Load data
     if 'df_cache' not in st.session_state or 'df_cache_timestamp' not in st.session_state:
         df = load_data()
